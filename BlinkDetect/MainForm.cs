@@ -117,7 +117,7 @@ namespace BlinkDetect
                     processedResizedFrame._EqualizeHist();
 
                     var a1 = new Array2D<byte>(processedResizedFrame.Width, processedResizedFrame.Height);
-                    oImageUtils.ImproveImage(ref processedResizedFrame, ImproveMethods.Clahe);
+                    oImageUtils.ImproveImage(ref processedResizedFrame, ImproveMethods.Averaging);
                     CopyBitmapToArray2D(ref a1, processedResizedFrame);
                     oImageUtils.DetectEyes(a1, ref eyes, ref IsDetected);
 

@@ -12,10 +12,10 @@ using Point = System.Drawing.Point;
 
 namespace BlinkDetect
 {
-    public  class ImageUtils
+    public class ImageUtils
     {
-        private  ShapePredictor sp;
-        private  FrontalFaceDetector detector;
+        private ShapePredictor sp;
+        private FrontalFaceDetector detector;
 
         public ImageUtils()
         {
@@ -25,7 +25,7 @@ namespace BlinkDetect
                     @"C:\Users\Felix\source\repos\BlinkDetect\External\shape_predictor_68_face_landmarks.dat");
         }
 
-        public void DetectEyes(Array2D<byte> image, ref System.Drawing.Point[][] eyes,ref bool IsDetected)
+        public void DetectEyes(Array2D<byte> image, ref System.Drawing.Point[][] eyes, ref bool IsDetected)
         {
             //ImageWindow win = new ImageWindow(image);
             //win.Show();
@@ -47,7 +47,7 @@ namespace BlinkDetect
                         temp = shape.GetPart(42 + (uint)ii);
                         eyes[1][ii] = new Point(temp.X, temp.Y);
                     }
-                    IsDetected=true;
+                    IsDetected = true;
                     //var chipLocations = Dlib.GetFaceChipDetails(shapes);
                 }
                 else
@@ -72,10 +72,10 @@ namespace BlinkDetect
 
             var rightDy1 = DistancebtwPoints(eyes[1][1], eyes[1][5]);
             var rightDy2 = DistancebtwPoints(eyes[1][2], eyes[1][4]);
-            var rightDx = DistancebtwPoints(eyes[1][0],  eyes[1][3]);
+            var rightDx = DistancebtwPoints(eyes[1][0], eyes[1][3]);
 
 
-            return ((leftDy1+leftDy2)/2F/(leftDx)+ (rightDy1 + rightDy2) / 2F / (rightDx))/2;
+            return ((leftDy1 + leftDy2) / 2F / (leftDx) + (rightDy1 + rightDy2) / 2F / (rightDx)) / 2;
         }
 
         public void ScaleEyes(ref Point[][] eyes, double dScale)
@@ -86,23 +86,53 @@ namespace BlinkDetect
                 {
                     eyes[i][j] = new Point((int)(eyes[i][j].X / dScale), (int)(eyes[i][j].Y / dScale));
                 }
-                
+
             }
         }
 
-        public void ImproveImage(ref Image<Gray, byte> processedResizedFrame,ImproveMethods enmImprove)
+        public void ImproveImage(ref Image<Gray, byte> processedResizedFrame, ImproveMethods enmImprove)
         {
             switch (enmImprove)
             {
                 case ImproveMethods.Clahe:
-                    Image<Gray, byte> afterCLAHE = new Image<Gray, byte>(processedResizedFrame.Size);
-                    CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), afterCLAHE);
-                    processedResizedFrame = afterCLAHE;
+                    ClaheImprove(ref processedResizedFrame);
+                    break;
+                case ImproveMethods.Averaging:
+                    AverageImprove(ref processedResizedFrame);
                     break;
                 default:
                     break;
             }
+
+        }
+
+        Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[5];
+        private int indxForAverage = 0;
+        private void AverageImprove(ref Image<Gray, byte> processedResizedFrame)
+        {
+            Image<Gray, byte> result = new Image<Gray, byte>(processedResizedFrame.Size);
+            imgsForAverage[indxForAverage] = processedResizedFrame;
+            indxForAverage = (indxForAverage+1) % imgsForAverage.Length;
+
             
+            for (int i = 0; i < imgsForAverage.Length; i++)
+            {
+                if (imgsForAverage[i] != null)
+                {
+                    result += imgsForAverage[i]/5;
+                    
+                }
+            }
+
+            processedResizedFrame = result ;
+
+        }
+
+        private static void ClaheImprove(ref Image<Gray, byte> processedResizedFrame)
+        {
+            Image<Gray, byte> afterCLAHE = new Image<Gray, byte>(processedResizedFrame.Size);
+            CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), afterCLAHE);
+            processedResizedFrame = afterCLAHE;
         }
     }
 }
