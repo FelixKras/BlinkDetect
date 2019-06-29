@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using DlibDotNet;
 using Emgu.CV;
+using Emgu.CV.CvEnum;
 using Emgu.CV.Plot;
 using Emgu.CV.Structure;
 using Point = System.Drawing.Point;
@@ -16,7 +17,9 @@ namespace BlinkDetect
     {
         private ShapePredictor sp;
         private FrontalFaceDetector detector;
+        public delegate void FilterAction(ref IImage b);
 
+        private Image<Gray, byte> darkImage;
         public ImageUtils()
         {
             detector = Dlib.GetFrontalFaceDetector();
@@ -90,7 +93,17 @@ namespace BlinkDetect
             }
         }
 
-        public void ImproveImage(ref Image<Gray, byte> processedResizedFrame, ImproveMethods enmImprove)
+
+
+        public void ImproveImage(ref IImage processedResizedFrame, List<FilterAction> lstFilters)
+        {
+            for (int ii = 0; ii < lstFilters.Count; ii++)
+            {
+                lstFilters[ii](ref processedResizedFrame);
+            }
+        }
+
+        public void ImproveImage(ref IImage processedResizedFrame, ImproveMethods enmImprove)
         {
             switch (enmImprove)
             {
@@ -108,31 +121,90 @@ namespace BlinkDetect
 
         Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[5];
         private int indxForAverage = 0;
-        private void AverageImprove(ref Image<Gray, byte> processedResizedFrame)
+
+        public void AverageImprove(ref IImage processedResizedFrame)
         {
-            Image<Gray, byte> result = new Image<Gray, byte>(processedResizedFrame.Size);
-            imgsForAverage[indxForAverage] = processedResizedFrame;
-            indxForAverage = (indxForAverage+1) % imgsForAverage.Length;
-
-            
-            for (int i = 0; i < imgsForAverage.Length; i++)
+            if ((processedResizedFrame as Image<Gray, byte>) == null)
             {
-                if (imgsForAverage[i] != null)
-                {
-                    result += imgsForAverage[i]/5;
-                    
-                }
-            }
 
-            processedResizedFrame = result ;
+
+            }
+            else
+            {
+                Image<Gray, byte> result = new Image<Gray, byte>(processedResizedFrame.Size);
+                imgsForAverage[indxForAverage] = (Image<Gray, byte>)processedResizedFrame;
+                indxForAverage = (indxForAverage + 1) % imgsForAverage.Length;
+
+                for (int i = 0; i < imgsForAverage.Length; i++)
+                {
+                    if (imgsForAverage[i] != null)
+                    {
+                        result += imgsForAverage[i] / 5;
+                    }
+                }
+                processedResizedFrame = result;
+            }
 
         }
 
-        private static void ClaheImprove(ref Image<Gray, byte> processedResizedFrame)
+        public void ClaheImprove(ref IImage processedResizedFrame)
         {
             Image<Gray, byte> afterCLAHE = new Image<Gray, byte>(processedResizedFrame.Size);
             CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), afterCLAHE);
             processedResizedFrame = afterCLAHE;
+        }
+
+        public void SetDarkFieldImage(IImage darkImage)
+        {
+            if ((darkImage as Image<Bgr, byte>) == null)
+            {
+                this.darkImage = ((Image<Bgr, byte>)darkImage).Convert<Gray, byte>();
+
+            }
+            else
+            {
+                this.darkImage = new Image<Gray, byte>(new Size(1920, 1080));
+            }
+
+
+        }
+
+        public void HSVImprove(ref IImage processedResizedFrame)
+        {
+            if ((processedResizedFrame as Image<Hsv, byte>) == null)
+            {
+            }
+            else
+            {
+                Image<Hsv, byte> HSVresult = new Image<Hsv, byte>(processedResizedFrame.Size);
+                CvInvoke.CvtColor(processedResizedFrame, HSVresult, ColorConversion.Bgr2Hsv);
+                IImage HSVonly = new Image<Gray, byte>(processedResizedFrame.Size);
+                HSVonly = HSVresult[2];
+                ClaheImprove(ref HSVonly);
+            }
+
+
+
+        }
+
+        public void DarkImageCorrection(ref IImage processedResizedFrame)
+        {
+            if ((processedResizedFrame as Image<Gray, byte>) == null)
+            {
+            }
+            else
+            {
+                if (processedResizedFrame.Size != darkImage.Size)
+                {
+                    darkImage = darkImage.Resize(processedResizedFrame.Size.Width, processedResizedFrame.Size.Height, Inter.Cubic);
+                }
+
+                Image<Gray, byte> temp = (Image<Gray, byte>)processedResizedFrame;
+                temp -= darkImage;
+                processedResizedFrame = temp;
+            }
+
+
         }
     }
 }

@@ -11,7 +11,10 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Emgu.CV.UI;
 
 
 namespace BlinkDetect
@@ -24,6 +27,7 @@ namespace BlinkDetect
         ClaheAndAveraging,
         HSVandClahe
     }
+
     public partial class MainForm : Form
     {
 
@@ -33,20 +37,32 @@ namespace BlinkDetect
         private AutoResetEvent areGetNewImage = new AutoResetEvent(false);
 
         private ConcurrentQueue<Image<Bgr, byte>> imagesQueue;
+        private ThreadSafeCircularQueue<Image<Bgr, byte>> imagesCircQueue;
         private Image<Bgr, Byte> currentFrame;
         private Image<Bgr, Byte> processedFrame;
         private Image<Gray, Byte> processedResizedFrame;
 
+
+        private Image<Bgr, byte> darkImage;
         ConcurrentQueue<double> eyeRatios = new ConcurrentQueue<double>();
         ConcurrentQueue<double> FPSque = new ConcurrentQueue<double>();
 
         [DllImport("msvcrt.dll", SetLastError = false)]
         static extern IntPtr memcpy(IntPtr dest, IntPtr src, int count);
+
         public MainForm()
         {
             InitializeComponent();
             Application.Idle += OnApplicationOnIdle;
         }
+
+        string[] MethodNames = new string[]
+        {
+            "Clahe",
+            "Average",
+            "DarkImageCorrection",
+            "HSV"
+        };
 
         private void OnApplicationOnIdle(object sender, EventArgs e)
         {
@@ -62,8 +78,13 @@ namespace BlinkDetect
                     double dtemp;
                     FPSque.TryDequeue(out dtemp);
                 }
+
                 label1.Text = FPSque.Average().ToString("F2");
             }
+
+            label5.Text = MethodNames[iFilterMethod];
+
+
         }
 
         private void SettingsToolStripMenuItem_Click(object sender, EventArgs e)
@@ -85,10 +106,14 @@ namespace BlinkDetect
             currentFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
             processedFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
             processedResizedFrame = new Image<Gray, byte>(capture.Width / 2, capture.Height / 2);
-            imagesQueue = new ConcurrentQueue<Image<Bgr, byte>>();
+            //imagesQueue = new ConcurrentQueue<Image<Bgr, byte>>();
+            imagesCircQueue = new ThreadSafeCircularQueue<Image<Bgr, byte>>(10);
             oImageUtils = new ImageUtils();
             capture.ImageGrabbed += Capture_ImageGrabbed;
             capture.Start();
+
+            darkImage = SaveDarkFieldImage("darkfield.bmp");
+            oImageUtils.SetDarkFieldImage(darkImage);
             StartImageProcessing();
             swGlobal = Stopwatch.StartNew();
         }
@@ -100,24 +125,41 @@ namespace BlinkDetect
             processThread.Start();
         }
 
+        private int iFilterMethod;
 
         private void ImageProcessing()
         {
             double dScale = 0.5;
+
+
+            List<ImageUtils.FilterAction> actFilters = new List<ImageUtils.FilterAction>();
+            actFilters.Add(oImageUtils.ClaheImprove);
+            actFilters.Add(oImageUtils.AverageImprove);
+            actFilters.Add(oImageUtils.DarkImageCorrection);
+            actFilters.Add(oImageUtils.HSVImprove);
+            int iFilter = 0;
             while (!tokenSource.Token.IsCancellationRequested)
             {
                 swGlobal.Restart();
                 //areGetNewImage.WaitOne();
-                if (imagesQueue.TryDequeue(out processedFrame))
+                if (imagesCircQueue.GetTail(out processedFrame)) //imagesQueue.TryDequeue(out processedFrame))
                 {
                     System.Drawing.Point[][] eyes = new System.Drawing.Point[2][];
                     bool IsDetected = false;
                     double EAR = 0;
                     processedResizedFrame = processedFrame.Resize(dScale, Inter.Linear).Convert<Gray, byte>();
-                    processedResizedFrame._EqualizeHist();
+                    //processedResizedFrame._EqualizeHist();
 
                     var a1 = new Array2D<byte>(processedResizedFrame.Width, processedResizedFrame.Height);
-                    oImageUtils.ImproveImage(ref processedResizedFrame, ImproveMethods.Averaging);
+                    //oImageUtils.ImproveImage(ref processedResizedFrame, ImproveMethods.Averaging);
+
+                    var temp = (IImage) processedResizedFrame;
+                    iFilter++;
+                    iFilterMethod = (iFilter / 200) % actFilters.Count;
+                    //oImageUtils.ImproveImage(ref temp, actFilters);
+                    actFilters[iFilterMethod](ref temp);
+                    processedResizedFrame = (Image<Gray, byte>) temp;
+
                     CopyBitmapToArray2D(ref a1, processedResizedFrame);
                     oImageUtils.DetectEyes(a1, ref eyes, ref IsDetected);
 
@@ -130,6 +172,7 @@ namespace BlinkDetect
                         processedFrame.DrawPolyline(eyes[0], true, new Bgr(Color.Blue), 2, LineType.FourConnected);
                         processedFrame.DrawPolyline(eyes[1], true, new Bgr(Color.Blue), 2, LineType.FourConnected);
                     }
+
                     swGlobal.Stop();
                     FPSque.Enqueue(1000F / swGlobal.ElapsedMilliseconds);
                     //processedFrame.Draw((1000F / swGlobal.ElapsedMilliseconds).ToString("F2") + " fps", new System.Drawing.Point(10, 20), FontFace.HersheyPlain, 2, new Bgr(Color.Red));
@@ -138,6 +181,41 @@ namespace BlinkDetect
                 }
 
             }
+
+        }
+
+        private Image<Bgr, byte> SaveDarkFieldImage(string darkfieldBmpPath)
+        {
+            const int cnstNumOfImages = 20;
+            Image<Bgr, byte>[] imgsToSum = new Image<Bgr, byte>[cnstNumOfImages];
+            Image<Bgr, byte> result;
+            if (!File.Exists(darkfieldBmpPath))
+            {
+                int ii = 0;
+                while (ii < 20)
+                {
+                    if (imagesQueue.TryDequeue(out processedFrame))
+                    {
+                        imgsToSum[ii] = processedFrame;
+                        ii++;
+                    }
+                }
+
+                result = new Image<Bgr, byte>(processedFrame[0].Size);
+                for (ii = 0; ii < cnstNumOfImages; ii++)
+                {
+                    result += imgsToSum[ii] / cnstNumOfImages;
+                }
+
+                result.Save(darkfieldBmpPath);
+            }
+            else
+            {
+
+                result = CvInvoke.Imread(darkfieldBmpPath).ToImage<Bgr, byte>();
+            }
+
+            return result;
 
         }
 
@@ -174,7 +252,8 @@ namespace BlinkDetect
             if (capture != null)
             {
                 capture.Retrieve(currentFrame);
-                imagesQueue.Enqueue(currentFrame);
+                //imagesQueue.Enqueue(currentFrame);
+                imagesCircQueue.Enqueue(currentFrame);
                 areGetNewImage.Set();
             }
 
@@ -188,9 +267,9 @@ namespace BlinkDetect
                 byte[] array = new byte[frameBitmap.Mat.Width * frameBitmap.Mat.Height * frameBitmap.Mat.ElementSize];
                 Marshal.Copy(frameBitmap.Mat.DataPointer, array, 0, array.Length);
                 //memcpy(a1., frameBitmap.Mat.DataPointer, array.Length);
-                a1 = Dlib.LoadImageData<byte>(array, (uint)frameBitmap.Mat.Rows,
-                    (uint)frameBitmap.Mat.Cols,
-                   (uint)(frameBitmap.Mat.Width * frameBitmap.Mat.ElementSize));
+                a1 = Dlib.LoadImageData<byte>(array, (uint) frameBitmap.Mat.Rows,
+                    (uint) frameBitmap.Mat.Cols,
+                    (uint) (frameBitmap.Mat.Width * frameBitmap.Mat.ElementSize));
             }
             finally
             {
@@ -199,4 +278,99 @@ namespace BlinkDetect
 
         }
     }
+
+
+    public class ThreadSafeCircularQueue<T>
+    {
+        T[] m_Buffer;
+        int m_NextWrite, m_Tail, m_Head, m_CurrRead;
+
+        public ThreadSafeCircularQueue(int length)
+        {
+            m_Buffer = new T[length];
+            m_NextWrite = 0;
+            m_Head = m_Tail = m_CurrRead = -1;
+        }
+
+        public int Length
+        {
+            get { return m_Buffer.Length; }
+        }
+
+        public void Enqueue(T o)
+        {
+            if (m_Head == -1) // initial state
+            {
+                m_Head = 0;
+                m_Tail = 0;
+                m_CurrRead = 0;
+            }
+            else
+            {
+                m_Tail = m_NextWrite;
+                if (m_Head == m_Tail)
+                    m_Head = mod(m_Tail + 1, m_Buffer.Length);
+                if (m_CurrRead == m_Tail)
+                    m_CurrRead = -1;
+            }
+
+            m_Buffer[m_NextWrite] = o;
+            m_NextWrite = mod(m_NextWrite + 1, m_Buffer.Length);
+        }
+
+        public T GetHead()
+        {
+            if (m_Head == -1)
+                return default(T);
+
+            m_CurrRead = m_Head;
+            return m_Buffer[m_Head];
+        }
+
+        public bool GetTail(out T item)
+        {
+            bool bRes = false;
+            if (m_Head == -1)
+            {
+                item= default(T);
+                bRes = false;
+            }
+            else
+            {
+                m_CurrRead = m_Tail;
+                item = m_Buffer[m_Tail];
+                bRes = true;
+            }
+            
+            return bRes;
+        }
+
+        public T GetNext()
+        {
+            if (m_CurrRead == -1 || m_CurrRead == m_Tail)
+                return default(T);
+
+            m_CurrRead = mod(m_CurrRead + 1, m_Buffer.Length);
+            ;
+            return m_Buffer[m_CurrRead];
+        }
+
+        public T GetPrev()
+        {
+            if (m_CurrRead == -1 || m_CurrRead == m_Head)
+                return default(T);
+
+            m_CurrRead = mod(m_CurrRead - 1, m_Buffer.Length);
+            return m_Buffer[m_CurrRead];
+        }
+
+        private int mod(int x, int m) // x mod m works for both positive and negative x (unlike x % m).
+        {
+            return (x % m + m) % m;
+        }
+    }
+
 }
+
+
+
