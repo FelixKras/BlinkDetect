@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -17,9 +19,14 @@ namespace BlinkDetect
     {
         private ShapePredictor sp;
         private FrontalFaceDetector detector;
+
+        private Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[5];
+        private int indxForAverage = 0;
+        private Image<Gray, byte> darkImage;
+
         public delegate void FilterAction(ref IImage b);
 
-        private Image<Gray, byte> darkImage;
+        
         public ImageUtils()
         {
             detector = Dlib.GetFrontalFaceDetector();
@@ -93,8 +100,7 @@ namespace BlinkDetect
             }
         }
 
-
-
+        
         public void ImproveImage(ref IImage processedResizedFrame, List<FilterAction> lstFilters)
         {
             for (int ii = 0; ii < lstFilters.Count; ii++)
@@ -102,7 +108,6 @@ namespace BlinkDetect
                 lstFilters[ii](ref processedResizedFrame);
             }
         }
-
         public void ImproveImage(ref IImage processedResizedFrame, ImproveMethods enmImprove)
         {
             switch (enmImprove)
@@ -119,8 +124,9 @@ namespace BlinkDetect
 
         }
 
-        Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[5];
-        private int indxForAverage = 0;
+        
+        
+        private Image<Gray, byte> result;
 
         public void AverageImprove(ref IImage processedResizedFrame)
         {
@@ -131,12 +137,21 @@ namespace BlinkDetect
             }
             else
             {
-                Image<Gray, byte> result = new Image<Gray, byte>(processedResizedFrame.Size);
+                if (result == null)
+                {
+                    result =new Image<Gray, byte>(processedResizedFrame.Size);
+                }
+                else
+                {
+                    result.SetValue(new Gray(0));
+                }
+
                 imgsForAverage[indxForAverage] = (Image<Gray, byte>)processedResizedFrame;
                 indxForAverage = (indxForAverage + 1) % imgsForAverage.Length;
 
                 for (int i = 0; i < imgsForAverage.Length; i++)
                 {
+                    
                     if (imgsForAverage[i] != null)
                     {
                         result += imgsForAverage[i] / 5;
@@ -149,9 +164,14 @@ namespace BlinkDetect
 
         public void ClaheImprove(ref IImage processedResizedFrame)
         {
-            Image<Gray, byte> afterCLAHE = new Image<Gray, byte>(processedResizedFrame.Size);
-            CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), afterCLAHE);
-            processedResizedFrame = afterCLAHE;
+            
+            if (result == null)
+            {
+                result = new Image<Gray, byte>(processedResizedFrame.Size);
+            }
+
+            CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), result);
+            processedResizedFrame = result;
         }
 
         public void SetDarkFieldImage(IImage darkImage)
@@ -169,6 +189,7 @@ namespace BlinkDetect
 
         }
 
+        private Image<Hsv, byte> HSVresult;
         public void HSVImprove(ref IImage processedResizedFrame)
         {
             if ((processedResizedFrame as Image<Hsv, byte>) == null)
@@ -176,11 +197,14 @@ namespace BlinkDetect
             }
             else
             {
-                Image<Hsv, byte> HSVresult = new Image<Hsv, byte>(processedResizedFrame.Size);
+                if (HSVresult == null)
+                {
+                    HSVresult = new Image<Hsv, byte>(processedResizedFrame.Size);
+                }
                 CvInvoke.CvtColor(processedResizedFrame, HSVresult, ColorConversion.Bgr2Hsv);
-                IImage HSVonly = new Image<Gray, byte>(processedResizedFrame.Size);
-                HSVonly = HSVresult[2];
+                IImage HSVonly = HSVresult[2];
                 ClaheImprove(ref HSVonly);
+                processedResizedFrame = HSVonly;
             }
 
 
@@ -206,5 +230,59 @@ namespace BlinkDetect
 
 
         }
+    }
+
+    public class ImgPool
+    {
+        private readonly ConcurrentDictionary<int, Image<Bgr,byte>> _objects;
+        private List<int> _rentedBitmaps;
+        private List<int> _freeBitmaps;
+        private int _width, _height;
+        
+        public ImgPool(int Width, int Height, int MaxObjCount)
+        {
+            _objects = new ConcurrentDictionary<int, Image<Bgr, byte>>();
+            _rentedBitmaps = new List<int>();
+            _freeBitmaps = new List<int>();
+            _height = Height;
+            _width = Width;
+
+            for (int ii = 0; ii < MaxObjCount; ii++)
+            {
+                _objects.TryAdd(ii, new Image<Bgr, byte>(_width, _height));
+                _freeBitmaps.Add(ii);
+            }
+        }
+
+        public Image<Bgr, byte> GetObject()
+        {
+            Image<Bgr, byte> item;
+            if (_freeBitmaps.Count > 0)
+            {
+                if (_objects.TryGetValue(_freeBitmaps[0], out item))
+                {
+                    _rentedBitmaps.Add(_freeBitmaps[0]);
+                    _freeBitmaps.RemoveAt(0);
+                }
+                else
+                {
+                    item = new Image<Bgr, byte>(_width, _height);
+
+                    //create more or reclaim _rented
+                }
+            }
+            else
+            {
+                List<int> temps;
+                temps = _freeBitmaps;
+                _freeBitmaps = _rentedBitmaps;
+                _rentedBitmaps = temps;
+                _objects.TryGetValue(_freeBitmaps[0], out item);
+
+            }
+            return item;
+        }
+
+
     }
 }
