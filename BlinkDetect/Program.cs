@@ -42,8 +42,8 @@ namespace BlinkDetect
                         if (instance == null)
                         {
                             instance = new SettingsHolder();
-                            instance.prop1 = 1.0;
-                            instance.prop2 = 2;
+                            instance.comPort = "COM7";
+                            instance.FPS = 15;
                             instance.prop3 = 3.0F;
                             
                         }
@@ -63,16 +63,16 @@ namespace BlinkDetect
 
 
         [Category("1. General Properties")]
-        [DisplayName("Property 1")]
+        [DisplayName("Com port")]
         [ReadOnly(false)]
-        [Description("Property 1 description")]
-        public double prop1 { get; set; }
+        [Description("Buzzer relay com port")]
+        public string comPort { get; set; }
 
         [Category("1. General Properties")]
-        [DisplayName("Property 1")]
+        [DisplayName("FPS")]
         [ReadOnly(false)]
-        [Description("Property 2 description")]
-        public int prop2 { get; set; }
+        [Description("Required camera FPS")]
+        public int FPS { get; set; }
 
         
         [Category("1. General Properties")]
