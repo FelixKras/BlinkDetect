@@ -38,11 +38,7 @@ namespace BlinkDetect
         private CancellationTokenSource tokenSource = new CancellationTokenSource();
         private AutoResetEvent areGetNewImage = new AutoResetEvent(false);
 
-        private ConcurrentQueue<Image<Bgr, byte>> concurrImagesQueue;
-        private CircularQueue<Image<Bgr, byte>> imagesCircQueue;
-
         private CircularImagesQueue imagesCircQ;
-
 
         private Image<Bgr, byte> currentFrame;
         private Image<Bgr, byte> processedFrame;
@@ -51,7 +47,10 @@ namespace BlinkDetect
 
         private Image<Bgr, byte> darkImage;
         CircularQueue<double> eyeRatios = new CircularQueue<double>((int)(SettingsHolder.Instance.FPS));
+        
         ConcurrentQueue<double> FPSque = new ConcurrentQueue<double>();
+
+        private EyeWatcher eyeWatcher;
 
         [DllImport("msvcrt.dll", SetLastError = false)]
         static extern IntPtr memcpy(IntPtr dest, IntPtr src, int count);
@@ -68,6 +67,7 @@ namespace BlinkDetect
             updateUiTimer.Start();
 
             AlertService.Init();
+            eyeWatcher =new EyeWatcher(ref eyeRatios,1000);
         }
 
         private void InitObjects()
@@ -89,17 +89,18 @@ namespace BlinkDetect
 
         private void OnApplicationOnIdle(object sender, EventArgs e)
         {
-            int numOfElem = eyeRatios.Length;
+            int numOfElem = eyeRatios.GetLength();
             double avrg = 0;
             if (numOfElem >= 2)
             {
                 avrg = CalcEarStatistics(eyeRatios);
                 label3.Text = avrg.ToString("F2");
-                if (avrg > eyeRatios.peekAt(numOfElem - 1) * 0.8)
+                if (EyeWatcher.TestIfAlarmNeeded())
                 {
                     AlertService.SetAlarm();
                 }
             }
+            
             else if (numOfElem == 0)
             {
                 label3.Text = "N/A";
@@ -328,6 +329,45 @@ namespace BlinkDetect
         }
     }
 
+    internal class EyeWatcher
+    {
+        private Thread thrTestEyeRatioThread;
+        private AutoResetEvent arCheck;
+        private CircularQueue<double> eyeRatiosQue;
+        private CancellationToken cancelToken;
+        private int iMilliToWait;
+        public EyeWatcher(ref CircularQueue<double> eyes,int milisec)
+        {
+            arCheck=new AutoResetEvent(false);
+            iMilliToWait = milisec;
+            thrTestEyeRatioThread = new Thread(TestEyeRatios) 
+            {IsBackground = true, Name = "TestEyeRatioThread"};
+        }
+
+        private void TestEyeRatios()
+        {
+            while (!cancelToken.IsCancellationRequested)
+            {
+                arCheck.WaitOne(iMilliToWait);
+
+
+            }
+            throw new NotImplementedException();
+        }
+
+        public  bool TestIfAlarmNeeded()
+        {
+            throw new NotImplementedException();
+        }
+
+        public  void CloseAlertService()
+        {
+            CancellationTokenSource.CreateLinkedTokenSource(cancelToken).Cancel();
+
+            
+        }
+    }
+
     public class CircularImagesQueue
     {
         Image<Bgr, byte>[] m_Buffer;
@@ -463,22 +503,11 @@ namespace BlinkDetect
         }
     }
 
-    public interface ISummable<T>
-    {
-        T Add(T a, T b);
-    }
-
-    public class MyDouble : ISummable<double>
-    {
-        public double Add(double a, double b)
-        {
-            return a + b;
-        }
-    }
     public class CircularQueue<T>
     {
         T[] m_Buffer;
-        int m_NextWrite, m_Tail, m_Head, m_CurrRead;
+        int m_NextWrite, m_Tail, m_Head, m_CurrRead, ielem = 0;
+
         ReaderWriterLockSlim slimLock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
         public CircularQueue(int length)
         {
@@ -515,7 +544,17 @@ namespace BlinkDetect
             }
 
             m_Buffer[m_NextWrite] = o;
+            if (ielem < m_Buffer.Length)
+            {
+                ielem++;
+            }
             m_NextWrite = mod(m_NextWrite + 1, m_Buffer.Length);
+        }
+
+        public int GetLength()
+        {
+            return ielem;
+
         }
 
         public T GetHead()
@@ -551,7 +590,6 @@ namespace BlinkDetect
                 return default(T);
 
             m_CurrRead = mod(m_CurrRead + 1, m_Buffer.Length);
-            ;
             return m_Buffer[m_CurrRead];
         }
 
@@ -563,7 +601,6 @@ namespace BlinkDetect
             m_CurrRead = mod(m_CurrRead - 1, m_Buffer.Length);
             return m_Buffer[m_CurrRead];
         }
-
 
 
         private int mod(int x, int m) // x mod m works for both positive and negative x (unlike x % m).
@@ -579,7 +616,7 @@ namespace BlinkDetect
         private static AutoResetEvent arRingAllow;
         private static CancellationToken cancelToken;
         private static int iLengthAlarmMilisec = 100;
-        
+
         public static bool Init()
         {
 
@@ -615,7 +652,7 @@ namespace BlinkDetect
 
         public static void SetAlarm()
         {
-            iLengthAlarmMilisec = 200;
+            iLengthAlarmMilisec = 20;
             arRingAllow.Set();
         }
 
