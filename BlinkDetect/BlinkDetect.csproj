@@ -45,6 +45,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="cExtMethods.cs" />
     <Compile Include="ImageProcessor.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>

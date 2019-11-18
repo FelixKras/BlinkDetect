@@ -10,7 +10,7 @@ namespace BlinkDetect
 {
     static class Program
     {
-        public const string versionNumber = "1.0.0.1";
+        public const string versionNumber = "1.0.1.1";
         public const string version = "BlinkDetect: " + versionNumber;
         /// <summary>
         /// The main entry point for the application.
@@ -29,6 +29,9 @@ namespace BlinkDetect
 
         private static SettingsHolder instance;
         private static object syncroot = new Object();
+        private int _numberOfBlinksToAlarm;
+        private int _numberOfSeccondsToAlarm;
+        private int _durationOfAlarm;
 
         public static SettingsHolder Instance
         {
@@ -45,7 +48,9 @@ namespace BlinkDetect
                             instance.comPort = "COM7";
                             instance.FPS = 15;
                             instance.prop3 = 3.0F;
-                            
+                            instance._durationOfAlarm = 20;
+                            instance._numberOfBlinksToAlarm = 5;
+                            instance._numberOfSeccondsToAlarm = 10;
                         }
                     }
                 }
@@ -81,9 +86,53 @@ namespace BlinkDetect
         [Description("Property 3 description")]
         public float prop3 { get; set; }
 
-        
+        [Category("3. Alarm Properties")]
+        [ReadOnly(false)]
+        [DisplayName("Number of Blinks")]
+        [Description("Number of blinks in X secconds to trigger alarm")]
+        public int NumberOfBlinksToAlarm
+        {
+            get
+            {
+                return _numberOfBlinksToAlarm;
+            }
+            set
+            {
+                _numberOfBlinksToAlarm = value;
+            }
+        }
 
+        [Category("3. Alarm Properties")]
+        [ReadOnly(false)]
+        [DisplayName("Number of secconds")]
+        [Description("Number of secconds to test for blinks")]
+        public int NumberOfSeccondsToAlarm
+        {
+            get
+            {
+                return _numberOfSeccondsToAlarm;
+            }
+            set
+            {
+                _numberOfSeccondsToAlarm = value;
+            }
+        }
 
+        [Category("3. Alarm Properties")]
+        [ReadOnly(false)]
+        [DisplayName("Alarm suration in ms ")]
+        [Description("Number of milisecconds to buzz the alarm")]
+        public int NumberOfmsBuzzer
+        {
+            get
+            {
+                return _durationOfAlarm;
+            }
+            set
+            {
+                _durationOfAlarm = value;
+            }
+        }
         public void Dispose()
         {
             lock (syncroot)

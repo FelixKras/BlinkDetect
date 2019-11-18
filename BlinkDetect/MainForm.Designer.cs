@@ -1,4 +1,6 @@
-﻿namespace BlinkDetect
+﻿using Emgu.CV.UI;
+
+namespace BlinkDetect
 {
     partial class MainForm
     {
@@ -65,6 +67,7 @@
             this.imageBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.CenterImage;
             this.imageBox1.TabIndex = 2;
             this.imageBox1.TabStop = false;
+            this.imageBox1.FunctionalMode = ImageBox.FunctionalModeOption.Minimum;
             // 
             // menuStrip1
             // 

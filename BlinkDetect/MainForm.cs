@@ -47,7 +47,7 @@ namespace BlinkDetect
 
         private Image<Bgr, byte> darkImage;
         CircularQueue<double> eyeRatios = new CircularQueue<double>((int)(SettingsHolder.Instance.FPS));
-        
+
         ConcurrentQueue<double> FPSque = new ConcurrentQueue<double>();
 
         private EyeWatcher eyeWatcher;
@@ -65,9 +65,6 @@ namespace BlinkDetect
             updateUiTimer.Interval = 100;
             updateUiTimer.Tick += OnApplicationOnIdle;
             updateUiTimer.Start();
-
-            AlertService.Init();
-            eyeWatcher =new EyeWatcher(ref eyeRatios,1000);
         }
 
         private void InitObjects()
@@ -93,14 +90,14 @@ namespace BlinkDetect
             double avrg = 0;
             if (numOfElem >= 2)
             {
-                avrg = CalcEarStatistics(eyeRatios);
+                avrg = cExtMethods.CalcEarStatistics(eyeRatios);
                 label3.Text = avrg.ToString("F2");
-                if (EyeWatcher.TestIfAlarmNeeded())
+                if (eyeWatcher.TestIfAlarmNeeded())
                 {
                     AlertService.SetAlarm();
                 }
             }
-            
+
             else if (numOfElem == 0)
             {
                 label3.Text = "N/A";
@@ -158,6 +155,9 @@ namespace BlinkDetect
                 StartImageProcessing();
                 button1.Text = "Stop";
                 IsRunning = true;
+
+                AlertService.Init();
+                eyeWatcher = new EyeWatcher(ref eyeRatios, 1000);
             }
             else
             {
@@ -199,7 +199,14 @@ namespace BlinkDetect
                 iFrameCount++;
                 swGlobal.Restart();
 
-                iFilterMethod = GetFilterIndex(iFrameCount, 200, actFilters.Count);
+                if (false)
+                {
+                    iFilterMethod = GetFilterIndex(iFrameCount, 200, actFilters.Count);
+                }
+                else
+                {
+                    iFilterMethod = 0;
+                }
 
                 if (imagesCircQ.GetTail(ref processedFrame))
                 {
@@ -223,7 +230,8 @@ namespace BlinkDetect
                         oImageUtils.ScaleEyes(ref eyes, dScale);
                         EAR = oImageUtils.CalculateEar(eyes);
                         eyeRatios.Enqueue(EAR);
-                        double avrgEAR = CalcEarStatistics(eyeRatios);
+                        eyeWatcher.EARAdded();
+                        //double avrgEAR = cExtMethods.CalcEarStatistics(eyeRatios);
                         processedFrame.DrawPolyline(eyes[0], true, new Bgr(Color.Blue), 2, LineType.FourConnected);
                         processedFrame.DrawPolyline(eyes[1], true, new Bgr(Color.Blue), 2, LineType.FourConnected);
                     }
@@ -246,8 +254,8 @@ namespace BlinkDetect
 
         private Image<Bgr, byte> SaveDarkFieldImage(string darkfieldBmpPath)
         {
-            const int cnstNumOfImages = 20;
-            Image<Bgr, byte>[] imgsToSum = new Image<Bgr, byte>[cnstNumOfImages];
+            int NumOfImages = SettingsHolder.Instance.FPS;
+            Image<Bgr, byte>[] imgsToSum = new Image<Bgr, byte>[NumOfImages];
             Image<Bgr, byte> result;
             if (!File.Exists(darkfieldBmpPath))
             {
@@ -264,50 +272,29 @@ namespace BlinkDetect
                 }
 
                 result = new Image<Bgr, byte>(processedFrame[0].Size);
-                for (ii = 0; ii < cnstNumOfImages; ii++)
+                for (ii = 0; ii < NumOfImages; ii++)
                 {
-                    result += imgsToSum[ii] / cnstNumOfImages;
+                    result += imgsToSum[ii] / NumOfImages;
                 }
-
                 result.Save(darkfieldBmpPath);
             }
             else
             {
-
                 result = CvInvoke.Imread(darkfieldBmpPath).ToImage<Bgr, byte>();
             }
-
             return result;
-
         }
-
-        private double CalcEarStatistics(CircularQueue<double> doubles)
-        {
-            double avrg = 0;
-            int numOfElem = doubles.Length;
-            for (int ii = 0; ii < numOfElem; ii++)
-            {
-                avrg += eyeRatios.peekAt(ii) / numOfElem;
-            }
-            return avrg;
-
-        }
-
 
         private void Capture_ImageGrabbed(object sender, EventArgs e)
         {
             VideoCapture capture = (sender as VideoCapture);
             if (capture != null)
             {
-                //currentFrame =oPool.GetObject();
+
                 capture.Retrieve(currentFrame);
-                //imagesQueue.Enqueue(currentFrame);
-                //imagesCircQueue.Enqueue(currentFrame);
                 imagesCircQ.Enqueue(currentFrame);
                 areGetNewImage.Set();
             }
-
-
         }
 
         private void CopyBitmapToArray2D(ref Array2D<byte> a1, Image<Gray, byte> frameBitmap)
@@ -333,38 +320,82 @@ namespace BlinkDetect
     {
         private Thread thrTestEyeRatioThread;
         private AutoResetEvent arCheck;
-        private CircularQueue<double> eyeRatiosQue;
+        private CircularQueue<double> _eyeRatiosQue;
         private CancellationToken cancelToken;
         private int iMilliToWait;
-        public EyeWatcher(ref CircularQueue<double> eyes,int milisec)
+        private CircularQueue<long> _blinks;
+        private Stopwatch swMillisecondsFromStart;
+        private const double msToSecconds=1000;
+        public EyeWatcher(ref CircularQueue<double> eyes, int milisec)
         {
-            arCheck=new AutoResetEvent(false);
+            arCheck = new AutoResetEvent(false);
+            swMillisecondsFromStart = Stopwatch.StartNew();
             iMilliToWait = milisec;
-            thrTestEyeRatioThread = new Thread(TestEyeRatios) 
-            {IsBackground = true, Name = "TestEyeRatioThread"};
+            _eyeRatiosQue = eyes;
+            _blinks=new CircularQueue<long>(SettingsHolder.Instance.NumberOfBlinksToAlarm);
+            thrTestEyeRatioThread = new Thread(TestEyeRatios)
+            { IsBackground = true, Name = "TestEyeRatioThread" };
+            thrTestEyeRatioThread.Start();
+            
         }
 
+        public void EARAdded()
+        {
+            arCheck.Set();
+        }
         private void TestEyeRatios()
         {
+            long lastBlinkTime;
+            long firstBlinkTime;
+            bool bBlinkTriggered = false;
             while (!cancelToken.IsCancellationRequested)
             {
-                arCheck.WaitOne(iMilliToWait);
+                arCheck.WaitOne();
+                if (_eyeRatiosQue.GetLength() >= _eyeRatiosQue.Length)
+                {
+                    double averageEAR = cExtMethods.CalcEarStatistics(_eyeRatiosQue);
+                    double lastEAR;
+                    _eyeRatiosQue.GetTail(out lastEAR);
+                    if (lastEAR < 0.6 * averageEAR & bBlinkTriggered==false)
+                    {
+                        bBlinkTriggered = true;
 
+                        
+                    }
+                    else if (lastEAR >= 0.6 * averageEAR & bBlinkTriggered==true)
+                    {
+                        bBlinkTriggered = false;
+                        _blinks.Enqueue(swMillisecondsFromStart.ElapsedMilliseconds);
+                        if (_blinks.GetLength() > SettingsHolder.Instance.NumberOfBlinksToAlarm - 1)
+                        {
+                            firstBlinkTime = _blinks.GetHead();
+                            _blinks.GetTail(out lastBlinkTime);
+                            if ((lastBlinkTime - firstBlinkTime) / 1000D < SettingsHolder.Instance.NumberOfSeccondsToAlarm)
+                            {
+                                AlertService.SetAlarm();
+                            }
+
+
+                        }
+                    }
+
+                }
+                
 
             }
-            throw new NotImplementedException();
+
         }
 
-        public  bool TestIfAlarmNeeded()
+        public bool TestIfAlarmNeeded()
         {
-            throw new NotImplementedException();
+            return false;
         }
 
-        public  void CloseAlertService()
+        public void CloseAlertService()
         {
             CancellationTokenSource.CreateLinkedTokenSource(cancelToken).Cancel();
 
-            
+
         }
     }
 
@@ -631,7 +662,7 @@ namespace BlinkDetect
                 spAlert.Open();
                 spAlert.Write(new byte[] { 0xA0, 0x01, 0x01, 0xA2 }, 0, 4);
 
-                Thread.Sleep(100);
+                Thread.Sleep(20);
 
                 spAlert.Write(new byte[] { 0xA0, 0x01, 0x00, 0xA1 }, 0, 4);
                 bRes = true;
@@ -652,7 +683,7 @@ namespace BlinkDetect
 
         public static void SetAlarm()
         {
-            iLengthAlarmMilisec = 20;
+            iLengthAlarmMilisec = SettingsHolder.Instance.NumberOfmsBuzzer;
             arRingAllow.Set();
         }
 
