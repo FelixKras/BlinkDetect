@@ -46,7 +46,7 @@ namespace BlinkDetect
         private Emgu.CV.VideoCapture capture;
 
         private Image<Bgr, byte> darkImage;
-        CircularQueue<double> eyeRatios = new CircularQueue<double>((int)(SettingsHolder.Instance.FPS));
+        CircularQueue<double> eyeRatios = new CircularQueue<double>((int)(2 * SettingsHolder.Instance.FPS));
 
         ConcurrentQueue<double> FPSque = new ConcurrentQueue<double>();
 
@@ -65,6 +65,7 @@ namespace BlinkDetect
             updateUiTimer.Interval = 100;
             updateUiTimer.Tick += OnApplicationOnIdle;
             updateUiTimer.Start();
+
         }
 
         private void InitObjects()
@@ -84,6 +85,21 @@ namespace BlinkDetect
             "HSV"
         };
 
+        private void OnReceivedMessage(object sender, EventArgs e)
+        {
+            string msg = sender as string;
+            if (msg != null)
+            {
+                string sMsgToDisplay = DateTime.UtcNow.ToString("HH:mm:ss.fff") + ": " + msg;
+                listBox1.InvokeIfRequired(
+                    () =>
+                    {
+                        listBox1.Items.Insert(0, sMsgToDisplay);
+                    });
+                //lstMessages.Insert(0, sMsgToDisplay);
+            }
+        }
+
         private void OnApplicationOnIdle(object sender, EventArgs e)
         {
             int numOfElem = eyeRatios.GetLength();
@@ -92,10 +108,7 @@ namespace BlinkDetect
             {
                 avrg = cExtMethods.CalcEarStatistics(eyeRatios);
                 label3.Text = avrg.ToString("F2");
-                if (eyeWatcher.TestIfAlarmNeeded())
-                {
-                    AlertService.SetAlarm();
-                }
+                
             }
 
             else if (numOfElem == 0)
@@ -158,6 +171,7 @@ namespace BlinkDetect
 
                 AlertService.Init();
                 eyeWatcher = new EyeWatcher(ref eyeRatios, 1000);
+                eyeWatcher.evBlinkDetected += OnReceivedMessage;
             }
             else
             {
@@ -165,6 +179,8 @@ namespace BlinkDetect
                 IsRunning = false;
                 button1.Text = "Start";
                 capture.Stop();
+                AlertService.CloseAlertService();
+                eyeWatcher.CloseEyeWatcher();
             }
 
         }
@@ -325,18 +341,19 @@ namespace BlinkDetect
         private int iMilliToWait;
         private CircularQueue<long> _blinks;
         private Stopwatch swMillisecondsFromStart;
-        private const double msToSecconds=1000;
+        private const double msToSecconds = 1000;
+        public EventHandler evBlinkDetected;
         public EyeWatcher(ref CircularQueue<double> eyes, int milisec)
         {
             arCheck = new AutoResetEvent(false);
             swMillisecondsFromStart = Stopwatch.StartNew();
             iMilliToWait = milisec;
             _eyeRatiosQue = eyes;
-            _blinks=new CircularQueue<long>(SettingsHolder.Instance.NumberOfBlinksToAlarm);
+            _blinks = new CircularQueue<long>(SettingsHolder.Instance.NumberOfBlinksToAlarm);
             thrTestEyeRatioThread = new Thread(TestEyeRatios)
             { IsBackground = true, Name = "TestEyeRatioThread" };
             thrTestEyeRatioThread.Start();
-            
+
         }
 
         public void EARAdded()
@@ -348,6 +365,7 @@ namespace BlinkDetect
             long lastBlinkTime;
             long firstBlinkTime;
             bool bBlinkTriggered = false;
+            long elapsedMili;
             while (!cancelToken.IsCancellationRequested)
             {
                 arCheck.WaitOne();
@@ -356,16 +374,19 @@ namespace BlinkDetect
                     double averageEAR = cExtMethods.CalcEarStatistics(_eyeRatiosQue);
                     double lastEAR;
                     _eyeRatiosQue.GetTail(out lastEAR);
-                    if (lastEAR < 0.6 * averageEAR & bBlinkTriggered==false)
+                    if (lastEAR < 0.6 * averageEAR & bBlinkTriggered == false)
                     {
                         bBlinkTriggered = true;
 
-                        
+
                     }
-                    else if (lastEAR >= 0.6 * averageEAR & bBlinkTriggered==true)
+                    else if (lastEAR >= 0.6 * averageEAR & bBlinkTriggered == true)
                     {
+                        
                         bBlinkTriggered = false;
-                        _blinks.Enqueue(swMillisecondsFromStart.ElapsedMilliseconds);
+                        elapsedMili = swMillisecondsFromStart.ElapsedMilliseconds;
+                        _blinks.Enqueue(elapsedMili);
+                        evBlinkDetected.Raise("Detected blink."+((elapsedMili - _blinks.GetHead())/1000F).ToString("F2")+ "secconds from first detected") ;
                         if (_blinks.GetLength() > SettingsHolder.Instance.NumberOfBlinksToAlarm - 1)
                         {
                             firstBlinkTime = _blinks.GetHead();
@@ -373,6 +394,7 @@ namespace BlinkDetect
                             if ((lastBlinkTime - firstBlinkTime) / 1000D < SettingsHolder.Instance.NumberOfSeccondsToAlarm)
                             {
                                 AlertService.SetAlarm();
+                                
                             }
 
 
@@ -380,22 +402,15 @@ namespace BlinkDetect
                     }
 
                 }
-                
+
 
             }
 
         }
 
-        public bool TestIfAlarmNeeded()
-        {
-            return false;
-        }
-
-        public void CloseAlertService()
+       public void CloseEyeWatcher()
         {
             CancellationTokenSource.CreateLinkedTokenSource(cancelToken).Cancel();
-
-
         }
     }
 
@@ -506,8 +521,6 @@ namespace BlinkDetect
             m_CurrRead = m_Head;
             return m_Buffer[m_Head];
         }
-
-
 
         public Image<Bgr, byte> GetNext()
         {
@@ -632,7 +645,6 @@ namespace BlinkDetect
             m_CurrRead = mod(m_CurrRead - 1, m_Buffer.Length);
             return m_Buffer[m_CurrRead];
         }
-
 
         private int mod(int x, int m) // x mod m works for both positive and negative x (unlike x % m).
         {

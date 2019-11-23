@@ -43,6 +43,7 @@ namespace BlinkDetect
             this.label4 = new System.Windows.Forms.Label();
             this.label5 = new System.Windows.Forms.Label();
             this.label6 = new System.Windows.Forms.Label();
+            this.listBox1 = new System.Windows.Forms.ListBox();
             ((System.ComponentModel.ISupportInitialize)(this.imageBox1)).BeginInit();
             this.menuStrip1.SuspendLayout();
             this.SuspendLayout();
@@ -60,6 +61,7 @@ namespace BlinkDetect
             // imageBox1
             // 
             this.imageBox1.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.imageBox1.FunctionalMode = Emgu.CV.UI.ImageBox.FunctionalModeOption.Minimum;
             this.imageBox1.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Invalid;
             this.imageBox1.Location = new System.Drawing.Point(12, 37);
             this.imageBox1.Name = "imageBox1";
@@ -67,7 +69,6 @@ namespace BlinkDetect
             this.imageBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.CenterImage;
             this.imageBox1.TabIndex = 2;
             this.imageBox1.TabStop = false;
-            this.imageBox1.FunctionalMode = ImageBox.FunctionalModeOption.Minimum;
             // 
             // menuStrip1
             // 
@@ -75,7 +76,7 @@ namespace BlinkDetect
             this.fileToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(892, 24);
+            this.menuStrip1.Size = new System.Drawing.Size(1244, 24);
             this.menuStrip1.TabIndex = 3;
             this.menuStrip1.Text = "menuStrip1";
             // 
@@ -159,11 +160,20 @@ namespace BlinkDetect
             this.label6.Text = "Filter Method";
             this.label6.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             // 
+            // listBox1
+            // 
+            this.listBox1.FormattingEnabled = true;
+            this.listBox1.Location = new System.Drawing.Point(853, 37);
+            this.listBox1.Name = "listBox1";
+            this.listBox1.Size = new System.Drawing.Size(379, 160);
+            this.listBox1.TabIndex = 5;
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(892, 684);
+            this.ClientSize = new System.Drawing.Size(1244, 684);
+            this.Controls.Add(this.listBox1);
             this.Controls.Add(this.label6);
             this.Controls.Add(this.label5);
             this.Controls.Add(this.label4);
@@ -198,6 +208,7 @@ namespace BlinkDetect
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.Label label5;
         private System.Windows.Forms.Label label6;
+        private System.Windows.Forms.ListBox listBox1;
     }
 }
 
