@@ -20,7 +20,7 @@ namespace BlinkDetect
         private ShapePredictor sp;
         private FrontalFaceDetector detector;
 
-        private Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[5];
+        private Image<Gray, byte>[] imgsForAverage = new Image<Gray, byte>[SettingsHolder.Instance.NumberOfFramesForAvrg];
         private int indxForAverage = 0;
         private Image<Gray, byte> darkImage;
 
@@ -100,29 +100,7 @@ namespace BlinkDetect
             }
         }
 
-        
-        public void ImproveImage(ref IImage processedResizedFrame, List<FilterAction> lstFilters)
-        {
-            for (int ii = 0; ii < lstFilters.Count; ii++)
-            {
-                lstFilters[ii](ref processedResizedFrame);
-            }
-        }
-        public void ImproveImage(ref IImage processedResizedFrame, ImproveMethods enmImprove)
-        {
-            switch (enmImprove)
-            {
-                case ImproveMethods.Clahe:
-                    ClaheImprove(ref processedResizedFrame);
-                    break;
-                case ImproveMethods.Averaging:
-                    AverageImprove(ref processedResizedFrame);
-                    break;
-                default:
-                    break;
-            }
-
-        }
+      
 
         
         
@@ -230,6 +208,43 @@ namespace BlinkDetect
 
 
         }
+
+        public void ClaheAndAvrgImprove(ref IImage processedResizedFrame)
+        {
+            if ((processedResizedFrame as Image<Gray, byte>) == null)
+            {
+
+
+            }
+            else
+            {
+                if (result == null)
+                {
+                    result = new Image<Gray, byte>(processedResizedFrame.Size);
+                }
+                else
+                {
+                    result.SetValue(new Gray(0));
+                }
+
+                imgsForAverage[indxForAverage] = (Image<Gray, byte>)processedResizedFrame;
+                indxForAverage = (indxForAverage + 1) % imgsForAverage.Length;
+
+                for (int i = 0; i < imgsForAverage.Length; i++)
+                {
+
+                    if (imgsForAverage[i] != null)
+                    {
+                        result += imgsForAverage[i] / SettingsHolder.Instance.NumberOfFramesForAvrg;
+                    }
+                }
+                processedResizedFrame = result;
+            }
+            
+            CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), result);
+            processedResizedFrame = result;
+        }
+
     }
 
     public class ImgPool

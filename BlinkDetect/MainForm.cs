@@ -21,14 +21,7 @@ using Timer = System.Timers.Timer;
 
 namespace BlinkDetect
 {
-    public enum ImproveMethods
-    {
-        Averaging,
-        Clahe,
-        AveragingAndClahe,
-        ClaheAndAveraging,
-        HSVandClahe
-    }
+
 
     public partial class MainForm : Form
     {
@@ -77,13 +70,15 @@ namespace BlinkDetect
             capture.ImageGrabbed += Capture_ImageGrabbed;
         }
 
+
         string[] MethodNames = new string[]
-        {
+               {
             "Clahe",
             "Average",
+            "Clahe And Average",
             "DarkImageCorrection",
             "HSV"
-        };
+               };
 
         private void OnReceivedMessage(object sender, EventArgs e)
         {
@@ -108,7 +103,7 @@ namespace BlinkDetect
             {
                 avrg = cExtMethods.CalcEarStatistics(eyeRatios);
                 label3.Text = avrg.ToString("F2");
-                
+
             }
 
             else if (numOfElem == 0)
@@ -203,6 +198,7 @@ namespace BlinkDetect
 
             actFilters.Add(oImageUtils.ClaheImprove);
             actFilters.Add(oImageUtils.AverageImprove);
+            actFilters.Add(oImageUtils.ClaheAndAvrgImprove);
             actFilters.Add(oImageUtils.DarkImageCorrection);
             actFilters.Add(oImageUtils.HSVImprove);
             int iFrameCount = 0;
@@ -221,7 +217,7 @@ namespace BlinkDetect
                 }
                 else
                 {
-                    iFilterMethod = 0;
+                    iFilterMethod = SettingsHolder.Instance.ImageProcessingMethod;
                 }
 
                 if (imagesCircQ.GetTail(ref processedFrame))
@@ -382,11 +378,12 @@ namespace BlinkDetect
                     }
                     else if (lastEAR >= 0.6 * averageEAR & bBlinkTriggered == true)
                     {
-                        
+
                         bBlinkTriggered = false;
                         elapsedMili = swMillisecondsFromStart.ElapsedMilliseconds;
                         _blinks.Enqueue(elapsedMili);
-                        evBlinkDetected.Raise("Detected blink."+((elapsedMili - _blinks.GetHead())/1000F).ToString("F2")+ "secconds from first detected") ;
+                        evBlinkDetected.Raise("Detected blink." + ((elapsedMili - _blinks.GetHead()) / 1000F)
+                                              .ToString("F2") + "\r\n secconds from first out of 5 detected");
                         if (_blinks.GetLength() > SettingsHolder.Instance.NumberOfBlinksToAlarm - 1)
                         {
                             firstBlinkTime = _blinks.GetHead();
@@ -394,7 +391,7 @@ namespace BlinkDetect
                             if ((lastBlinkTime - firstBlinkTime) / 1000D < SettingsHolder.Instance.NumberOfSeccondsToAlarm)
                             {
                                 AlertService.SetAlarm();
-                                
+
                             }
 
 
@@ -408,7 +405,7 @@ namespace BlinkDetect
 
         }
 
-       public void CloseEyeWatcher()
+        public void CloseEyeWatcher()
         {
             CancellationTokenSource.CreateLinkedTokenSource(cancelToken).Cancel();
         }
