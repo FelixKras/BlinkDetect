@@ -32,7 +32,7 @@ namespace BlinkDetect
             detector = Dlib.GetFrontalFaceDetector();
             sp =
                 ShapePredictor.Deserialize(
-                    @"C:\Users\Felix\source\repos\BlinkDetect\External\shape_predictor_68_face_landmarks.dat");
+                    @"..\External\shape_predictor_68_face_landmarks.dat");
         }
 
         public void DetectEyes(Array2D<byte> image, ref System.Drawing.Point[][] eyes, ref bool IsDetected)
