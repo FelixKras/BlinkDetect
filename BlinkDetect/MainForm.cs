@@ -10,13 +10,10 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
-using System.Drawing;
 using System.IO;
 using System.IO.Ports;
 using System.Linq;
-using System.Threading.Tasks;
-using Emgu.CV.UI;
-using Timer = System.Timers.Timer;
+
 
 
 namespace BlinkDetect
@@ -138,8 +135,7 @@ namespace BlinkDetect
             {
                 while (FPSque.Count > 20)
                 {
-                    double dtemp;
-                    FPSque.TryDequeue(out dtemp);
+                    FPSque.TryDequeue(out _);
                 }
 
                 label1.Text = FPSque.Average().ToString("F2");

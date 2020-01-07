@@ -10,7 +10,7 @@ namespace BlinkDetect
 {
     static class Program
     {
-        public const string versionNumber = "1.0.2.1";
+        public const string versionNumber = "1.0.2.2";
         public const string version = "BlinkDetect: " + versionNumber;
         /// <summary>
         /// The main entry point for the application.

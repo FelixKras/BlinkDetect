@@ -150,11 +150,11 @@ namespace BlinkDetect
             processedResizedFrame = result;
         }
 
-        public void SetDarkFieldImage(IImage darkImage)
+        public void SetDarkFieldImage(IImage _darkImage)
         {
-            if ((darkImage as Image<Bgr, byte>) == null)
+            if ((_darkImage as Image<Bgr, byte>) == null)
             {
-                this.darkImage = ((Image<Bgr, byte>)darkImage).Convert<Gray, byte>();
+                this.darkImage = ((Image<Bgr, byte>)_darkImage).Convert<Gray, byte>();
 
             }
             else
