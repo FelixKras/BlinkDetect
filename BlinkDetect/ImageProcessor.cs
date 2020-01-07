@@ -26,7 +26,7 @@ namespace BlinkDetect
 
         public delegate void FilterAction(ref IImage b);
 
-        
+
         public ImageUtils()
         {
             detector = Dlib.GetFrontalFaceDetector();
@@ -84,7 +84,6 @@ namespace BlinkDetect
             var rightDy2 = DistancebtwPoints(eyes[1][2], eyes[1][4]);
             var rightDx = DistancebtwPoints(eyes[1][0], eyes[1][3]);
 
-
             return ((leftDy1 + leftDy2) / 2F / (leftDx) + (rightDy1 + rightDy2) / 2F / (rightDx)) / 2;
         }
 
@@ -96,14 +95,13 @@ namespace BlinkDetect
                 {
                     eyes[i][j] = new Point((int)(eyes[i][j].X / dScale), (int)(eyes[i][j].Y / dScale));
                 }
-
             }
         }
 
-      
 
-        
-        
+
+
+
         private Image<Gray, byte> result;
 
         public void AverageImprove(ref IImage processedResizedFrame)
@@ -117,7 +115,7 @@ namespace BlinkDetect
             {
                 if (result == null)
                 {
-                    result =new Image<Gray, byte>(processedResizedFrame.Size);
+                    result = new Image<Gray, byte>(processedResizedFrame.Size);
                 }
                 else
                 {
@@ -129,7 +127,7 @@ namespace BlinkDetect
 
                 for (int i = 0; i < imgsForAverage.Length; i++)
                 {
-                    
+
                     if (imgsForAverage[i] != null)
                     {
                         result += imgsForAverage[i] / 5;
@@ -142,7 +140,7 @@ namespace BlinkDetect
 
         public void ClaheImprove(ref IImage processedResizedFrame)
         {
-            
+
             if (result == null)
             {
                 result = new Image<Gray, byte>(processedResizedFrame.Size);
@@ -240,7 +238,7 @@ namespace BlinkDetect
                 }
                 processedResizedFrame = result;
             }
-            
+
             CvInvoke.CLAHE(processedResizedFrame, 40, new Size(8, 8), result);
             processedResizedFrame = result;
         }
@@ -249,11 +247,11 @@ namespace BlinkDetect
 
     public class ImgPool
     {
-        private readonly ConcurrentDictionary<int, Image<Bgr,byte>> _objects;
+        private readonly ConcurrentDictionary<int, Image<Bgr, byte>> _objects;
         private List<int> _rentedBitmaps;
         private List<int> _freeBitmaps;
         private int _width, _height;
-        
+
         public ImgPool(int Width, int Height, int MaxObjCount)
         {
             _objects = new ConcurrentDictionary<int, Image<Bgr, byte>>();

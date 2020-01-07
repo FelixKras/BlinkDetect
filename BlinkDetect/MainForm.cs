@@ -31,6 +31,7 @@ namespace BlinkDetect
         private CancellationTokenSource tokenSource = new CancellationTokenSource();
         private AutoResetEvent areGetNewImage = new AutoResetEvent(false);
 
+        byte[] arrayForTransfer;
         private CircularImagesQueue imagesCircQ;
 
         private Image<Bgr, byte> currentFrame;
@@ -53,21 +54,43 @@ namespace BlinkDetect
         public MainForm()
         {
             InitializeComponent();
-            InitObjects();
-            //Application.Idle += OnApplicationOnIdle;
-            updateUiTimer.Interval = 100;
-            updateUiTimer.Tick += OnApplicationOnIdle;
-            updateUiTimer.Start();
+            bool bRes=InitObjects();
+            if (bRes)
+            {
+                updateUiTimer.Interval = 100;
+                updateUiTimer.Tick += OnApplicationOnIdle;
+                updateUiTimer.Start();
+            }
+            else
+            {
+                
+            }
+
+            
 
         }
 
-        private void InitObjects()
+        private bool InitObjects()
         {
-            capture = new VideoCapture(0, VideoCapture.API.DShow);
-            capture.SetCaptureProperty(CapProp.FrameWidth, 640);
-            capture.SetCaptureProperty(CapProp.FrameHeight, 480);
-            capture.SetCaptureProperty(CapProp.Fps, SettingsHolder.Instance.FPS);
-            capture.ImageGrabbed += Capture_ImageGrabbed;
+            bool bRes = false;
+
+            capture = new VideoCapture(0,VideoCapture.API.DShow);
+
+            if (capture.CaptureSource==VideoCapture.CaptureModuleType.Camera && capture.IsOpened)
+            {
+                capture.SetCaptureProperty(CapProp.FrameWidth, 640);
+                capture.SetCaptureProperty(CapProp.FrameHeight, 480);
+                capture.SetCaptureProperty(CapProp.Fps, SettingsHolder.Instance.FPS);
+                capture.ImageGrabbed += Capture_ImageGrabbed;
+                bRes = true; 
+                
+            }
+            else
+            {
+                bRes = false;
+            }
+            
+            return bRes;
         }
 
 
@@ -143,30 +166,47 @@ namespace BlinkDetect
         {
             if (!IsRunning)
             {
-                tokenSource = new CancellationTokenSource();
+                if (capture.CaptureSource == VideoCapture.CaptureModuleType.Camera && capture.IsOpened)
+                {
+                    tokenSource = new CancellationTokenSource();
 
-                currentFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
-                processedFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
-                processedResizedFrame = new Image<Gray, byte>(capture.Width / 2, capture.Height / 2);
-                //imagesQueue = new ConcurrentQueue<Image<Bgr, byte>>();
-                //imagesCircQueue = new CircularQueue<Image<Bgr, byte>>(10);
-                imagesCircQ = new CircularImagesQueue(10, new Size(capture.Width, capture.Height));
+                    currentFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
+                    processedFrame = new Image<Bgr, byte>(capture.Width, capture.Height);
+                    processedResizedFrame = new Image<Gray, byte>(capture.Width / 2, capture.Height / 2);
+                    //imagesQueue = new ConcurrentQueue<Image<Bgr, byte>>();
+                    //imagesCircQueue = new CircularQueue<Image<Bgr, byte>>(10);
+                    imagesCircQ = new CircularImagesQueue(10, new Size(capture.Width, capture.Height));
 
-                oImageUtils = new ImageUtils();
+                    oImageUtils = new ImageUtils();
 
 
-                capture.Start();
+                    capture.Start();
 
-                darkImage = SaveDarkFieldImage("darkfield.bmp");
-                oImageUtils.SetDarkFieldImage(darkImage);
-                swGlobal = Stopwatch.StartNew();
-                StartImageProcessing();
-                button1.Text = "Stop";
-                IsRunning = true;
+                    darkImage = SaveDarkFieldImage("darkfield.bmp");
+                    oImageUtils.SetDarkFieldImage(darkImage);
+                    swGlobal = Stopwatch.StartNew();
+                    StartImageProcessing();
+                    button1.Text = "Stop";
+                    IsRunning = true;
 
-                AlertService.Init();
-                eyeWatcher = new EyeWatcher(ref eyeRatios, 1000);
-                eyeWatcher.evBlinkDetected += OnReceivedMessage;
+                    AlertService.Init();
+                    eyeWatcher = new EyeWatcher(ref eyeRatios, 1000);
+                    eyeWatcher.evBlinkDetected += OnReceivedMessage;
+                    AlertService.evAlert += OnReceivedMessage;
+                }
+                else
+                {
+                    IsRunning = false;
+                    OnReceivedMessage("Camera was not initialized",EventArgs.Empty);
+                    button1.Text = "Start";
+                    capture.Stop();
+                    AlertService.CloseAlertService();
+                    if (eyeWatcher != null)
+                    {
+                        eyeWatcher.CloseEyeWatcher();
+                    }
+                }
+                
             }
             else
             {
@@ -299,13 +339,13 @@ namespace BlinkDetect
 
         private void Capture_ImageGrabbed(object sender, EventArgs e)
         {
-            VideoCapture capture = (sender as VideoCapture);
+            capture = (sender as VideoCapture);
             if (capture != null)
             {
-
                 capture.Retrieve(currentFrame);
                 imagesCircQ.Enqueue(currentFrame);
                 areGetNewImage.Set();
+                
             }
         }
 
@@ -313,10 +353,13 @@ namespace BlinkDetect
         {
             try
             {
-                byte[] array = new byte[frameBitmap.Mat.Width * frameBitmap.Mat.Height * frameBitmap.Mat.ElementSize];
-                Marshal.Copy(frameBitmap.Mat.DataPointer, array, 0, array.Length);
+                if (arrayForTransfer == null)
+                {
+                    arrayForTransfer = new byte[frameBitmap.Mat.Width * frameBitmap.Mat.Height * frameBitmap.Mat.ElementSize];
+                }
+                Marshal.Copy(frameBitmap.Mat.DataPointer, arrayForTransfer, 0, arrayForTransfer.Length);
                 //memcpy(a1., frameBitmap.Mat.DataPointer, array.Length);
-                a1 = Dlib.LoadImageData<byte>(array, (uint)frameBitmap.Mat.Rows,
+                a1 = Dlib.LoadImageData<byte>(arrayForTransfer, (uint)frameBitmap.Mat.Rows,
                     (uint)frameBitmap.Mat.Cols,
                     (uint)(frameBitmap.Mat.Width * frameBitmap.Mat.ElementSize));
             }
@@ -383,7 +426,7 @@ namespace BlinkDetect
                         elapsedMili = swMillisecondsFromStart.ElapsedMilliseconds;
                         _blinks.Enqueue(elapsedMili);
                         evBlinkDetected.Raise("Detected blink." + ((elapsedMili - _blinks.GetHead()) / 1000F)
-                                              .ToString("F2") + "\r\n secconds from first out of 5 detected");
+                                              .ToString("F2") + "\r\n secconds from first  detected");
                         if (_blinks.GetLength() > SettingsHolder.Instance.NumberOfBlinksToAlarm - 1)
                         {
                             firstBlinkTime = _blinks.GetHead();
@@ -656,7 +699,7 @@ namespace BlinkDetect
         private static AutoResetEvent arRingAllow;
         private static CancellationToken cancelToken;
         private static int iLengthAlarmMilisec = 100;
-
+        public static EventHandler evAlert;
         public static bool Init()
         {
 
@@ -664,6 +707,7 @@ namespace BlinkDetect
             try
             {
                 thrRing = new Thread(Alarm);
+                thrRing.IsBackground = true;
                 thrRing.Start();
                 cancelToken = new CancellationToken(false);
                 arRingAllow = new AutoResetEvent(false);
@@ -701,9 +745,17 @@ namespace BlinkDetect
             while (!cancelToken.IsCancellationRequested)
             {
                 arRingAllow.WaitOne();
-                spAlert.Write(new byte[] { 0xA0, 0x01, 0x01, 0xA2 }, 0, 4);
-                Thread.Sleep(iLengthAlarmMilisec);
-                spAlert.Write(new byte[] { 0xA0, 0x01, 0x00, 0xA1 }, 0, 4);
+                if (spAlert.IsOpen)
+                {
+                    spAlert.Write(new byte[] { 0xA0, 0x01, 0x01, 0xA2 }, 0, 4);
+                    Thread.Sleep(iLengthAlarmMilisec);
+                    spAlert.Write(new byte[] { 0xA0, 0x01, 0x00, 0xA1 }, 0, 4);
+                }
+                else
+                {
+                    evAlert.Raise("Distress detected. ALARM!!! ALARM!!!");
+                }
+                
 
             }
         }
@@ -712,8 +764,11 @@ namespace BlinkDetect
         {
             CancellationTokenSource.CreateLinkedTokenSource(cancelToken).Cancel();
 
-            spAlert.Close();
-            spAlert.Dispose();
+            if (spAlert != null)
+            {
+                spAlert.Close();
+                spAlert.Dispose();
+            }
         }
     }
     public class CircularImagesQueueGray
